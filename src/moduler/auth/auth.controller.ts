@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { authService } from "./auth.service";
-import { truncates } from "bcryptjs";
+
 
 const createUser= async(req: Request, res: Response) => {
     try {

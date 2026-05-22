@@ -1,7 +1,7 @@
 import type { JwtPayload } from "jsonwebtoken";
 import { pool } from "../../db";
-
 import type { TIssue } from "./issue.interface";
+
 const createIssueIntoDB= async(payload: TIssue, user: JwtPayload) => {
     const {title, description, type} = payload;
     const result = await pool.query(`
@@ -10,46 +10,47 @@ const createIssueIntoDB= async(payload: TIssue, user: JwtPayload) => {
         return result;
 }
 
+// start to get all issues by filter or short
 const getAllIssuesFromDB = async (query: any) => {
   const { sort = "newest", type, status } = query;
 
-  let sql = `SELECT * FROM issues`;
+  let findQuery = `SELECT * FROM issues`;
   const conditions: string[] = [];
   const values: any[] = [];
 
-  // FILTER: type
+  // filter => type
   if (type) {
     conditions.push(`type = $${values.length + 1}`);
     values.push(type);
   }
 
-  // FILTER: status
+  // filter status
   if (status) {
     conditions.push(`status = $${values.length + 1}`);
     values.push(status);
   }
 
   if (conditions.length) {
-    sql += ` WHERE ` + conditions.join(" AND ");
+    findQuery += ` WHERE ` + conditions.join(" AND ");
   }
 
-  // SORT
+  // filter short
   if (sort === "oldest") {
-    sql += ` ORDER BY created_at ASC`;
+    findQuery += ` ORDER BY created_at ASC`;
   } else {
-    sql += ` ORDER BY created_at DESC`;
+    findQuery += ` ORDER BY created_at DESC`;
   }
 
-  // STEP 1: get issues
-  const issuesResult = await pool.query(sql, values);
+  // get issues
+  const issuesResult = await pool.query(findQuery, values);
   const issues = issuesResult.rows;
 
   if (issues.length === 0) return [];
 
-  // STEP 2: collect reporter ids
+  // collect reporter id
   const reporterIds = [...new Set(issues.map((i) => i.reporter_id))];
 
-  // STEP 3: fetch users in batch
+  // get users in batch
   const usersResult = await pool.query(
     `SELECT id, name, role FROM users WHERE id = ANY($1)`,
     [reporterIds]
@@ -60,7 +61,7 @@ const getAllIssuesFromDB = async (query: any) => {
     userMap.set(user.id, user);
   });
 
-  // STEP 4: attach reporter
+  // for return attach reporter
   const result = issues.map((issue) => ({
     id: issue.id,
     title: issue.title,
@@ -76,8 +77,70 @@ const getAllIssuesFromDB = async (query: any) => {
 
   return result;
 };
+// ene of gett all filter data
 
+
+const getSingleIssueFormDB = async (id: string) => {
+  const issueData = await pool.query(`
+    SELECT * FROM issues WHERE id=$1
+    `,[id]);
+    
+    if(issueData.rows.length === 0){
+      throw new Error("Issue Not Found!")
+    }
+    const issue = issueData.rows[0];
+    const userData = await pool.query(`
+      SELECT * FROM users WHERE id=$1
+      `,[issue.reporter_id]);
+      const user = userData.rows[0];
+  
+    const result = {
+      id: issue.id,
+      title: issue.title,
+      description: issue.description,
+      type: issue.type,
+      status: issue.status,
+      reporter: {
+        id: user.id,
+        name: user.name,
+        role: user.role
+      },
+      created_at: issue.created_at,
+      updated_at: issue.updated_at
+    }
+    return result;
+
+}
+
+
+const updateIssueIntoDB = async(id:string,payload:TIssue, user:JwtPayload) => {
+   const { title, description, type } = payload;
+    const issueData = await pool.query(`
+     SELECT * FROM issues WHERE id=$1
+     `,[id]);
+     if(issueData.rows.length === 0){
+      throw new Error("Issue not found!");
+    }
+    const issue = issueData.rows[0];
+
+    if(user.role === "contributor" && issue.reporter_id  !== user.id){
+      throw new Error("Contributor can update own issue!");
+    }
+    if(issue.status !== "open"){
+      throw new Error("Update only if status is open!");
+    }
+    const result = await pool.query(`
+      UPDATE issues SET title=COALESCE($1, title),
+      description=COALESCE($2, description),
+      type=COALESCE($3, type),
+      updated_at= NOW() WHERE id=$4 RETURNING *
+      `,[title, description, type, id]);
+      return result;
+
+}
 export const issueService = {
     createIssueIntoDB,
     getAllIssuesFromDB,
+    getSingleIssueFormDB,
+    updateIssueIntoDB
 }

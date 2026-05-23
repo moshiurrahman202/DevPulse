@@ -1,6 +1,6 @@
 import type { JwtPayload } from "jsonwebtoken";
 import { pool } from "../../db";
-import type { TIssue } from "./issue.interface";
+import type { TIssue, TIssueQuery } from "./issue.interface";
 
 const createIssueIntoDB= async(payload: TIssue, user: JwtPayload) => {
     const {title, description, type} = payload;
@@ -11,12 +11,12 @@ const createIssueIntoDB= async(payload: TIssue, user: JwtPayload) => {
 }
 
 // start to get all issues by filter or short
-const getAllIssuesFromDB = async (query: any) => {
+const getAllIssuesFromDB = async (query: TIssueQuery) => {
   const { sort = "newest", type, status } = query;
 
   let findQuery = `SELECT * FROM issues`;
   const conditions: string[] = [];
-  const values: any[] = [];
+  const values: string[] = [];
 
   // filter => type
   if (type) {
@@ -30,8 +30,8 @@ const getAllIssuesFromDB = async (query: any) => {
     values.push(status);
   }
 
-  if (conditions.length) {
-    findQuery += ` WHERE ` + conditions.join(" AND ");
+  if (conditions.length > 0) {
+    findQuery += ` WHERE ${conditions.join(" AND ")}`;
   }
 
   // filter short
@@ -43,20 +43,23 @@ const getAllIssuesFromDB = async (query: any) => {
 
   // get issues
   const issuesResult = await pool.query(findQuery, values);
+  // console.log(issuesResult);
   const issues = issuesResult.rows;
 
   if (issues.length === 0) return [];
 
-  // collect reporter id
-  const reporterIds = [...new Set(issues.map((i) => i.reporter_id))];
+  // collect all id
+  const reporterId = [...new Set(issues.map((item) => item.reporter_id))];
+
 
   // get users in batch
   const usersResult = await pool.query(
     `SELECT id, name, role FROM users WHERE id = ANY($1)`,
-    [reporterIds]
+    [reporterId]
   );
 
   const userMap = new Map();
+
   usersResult.rows.forEach((user) => {
     userMap.set(user.id, user);
   });
@@ -68,16 +71,14 @@ const getAllIssuesFromDB = async (query: any) => {
     description: issue.description,
     type: issue.type,
     status: issue.status,
-
     reporter: userMap.get(issue.reporter_id),
-
     created_at: issue.created_at,
     updated_at: issue.updated_at,
   }));
 
   return result;
 };
-// ene of gett all filter data
+// ene of get all filter data
 
 
 const getSingleIssueFormDB = async (id: string) => {
@@ -138,9 +139,21 @@ const updateIssueIntoDB = async(id:string,payload:TIssue, user:JwtPayload) => {
       return result;
 
 }
+const deleteIssueFromDB = async (id: string) => {
+  const result = await pool.query(`
+    SELECT * FROM issues WHERE id=$1
+    `, [id]);
+    if(result.rows.length === 0){
+      throw new Error("Issue not found")
+    }
+    await pool.query(`
+      DELETE FROM issues WHERE id=$1
+      `,[id])
+}
 export const issueService = {
     createIssueIntoDB,
     getAllIssuesFromDB,
     getSingleIssueFormDB,
-    updateIssueIntoDB
+    updateIssueIntoDB,
+    deleteIssueFromDB
 }

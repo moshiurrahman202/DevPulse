@@ -2,13 +2,15 @@ import type { NextFunction, Request, Response } from "express"
 import jwt, { type JwtPayload } from "jsonwebtoken"
 import config from "../config";
 import { pool } from "../db";
+import sendResponse from "../utility/sendResponse";
 const auth = (...roles: string[]) => {
     return async(req: Request, res: Response, next: NextFunction) => {
         try {
             const token = req.headers.authorization;
         if(!token){
-            res.status(401).json({
-                success: false,
+            sendResponse(res, {
+                statusCode: 401,
+                success:false,
                 message: "Unauthorized access!"
             })
         }
@@ -19,13 +21,15 @@ const auth = (...roles: string[]) => {
 
             const user = userData.rows[0]
             if(userData.rows.length === 0){
-                res.status(404).json({
+                sendResponse(res, {
+                    statusCode: 404,
                     success: false,
                     message: "user not found!"
                 })
             }
             if(roles.length && !roles.includes(user.role)){
-                res.status(403).json({
+                sendResponse(res, {
+                    statusCode: 403,
                     success: false,
                     message: "forbidden this roke have no access!"
                 })
